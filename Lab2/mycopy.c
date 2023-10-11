@@ -33,7 +33,7 @@ int main(int argc, char** args) {
         return errno;
     }
 
-    size_t bytesread = 0, byteswritten = 0;
+    off_t bytesread = 0, byteswritten = 0;
     while(bytesread < st.st_size) {
         int ret = read(srcfd, buffer + bytesread, st.st_size - bytesread);
         if(ret == -1) {
