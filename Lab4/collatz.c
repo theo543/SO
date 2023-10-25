@@ -7,7 +7,22 @@
 #include <stdio.h>
 #include <errno.h>
 
-const char *LS_LOCATION = "/usr/bin/ls";
+#define ull unsigned long long
+
+// strtoull but only reading valid positive integers, prints an warning to stderr and returns 0 for errors
+ull checked_strtoull(char *input) {
+    char *parse_result;
+    errno = 0;
+    ull collatz = strtoull(input, &parse_result, 10);
+    if(*parse_result != '\0' || errno == ERANGE || strchr(input, '-')) {
+        fprintf(stderr, "Failed to parse input '%s' as unsigned long long\n", input);
+        return 0;
+    }
+    if(collatz == 0) {
+        fprintf(stderr, "Input must be strictly positive\n");
+    }
+    return collatz;
+}
 
 int main(int argc, char **argv) {
     if(argc != 2) {
@@ -15,11 +30,8 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    char *parse_result;
-    errno = 0;
-    unsigned long long collatz = strtoull(argv[1], &parse_result, 10);
-    if(*parse_result != '\0' || errno == ERANGE || strchr(argv[1], '-')) {
-        fprintf(stderr, "Failed to parse input as unsigned long long\n");
+    ull collatz = checked_strtoull(argv[1]);
+    if(collatz == 0) {
         return EXIT_FAILURE;
     }
 
