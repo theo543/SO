@@ -26,7 +26,7 @@ ull checked_strtoull(char *input) {
 
 int main(int argc, char **argv) {
     if(argc != 2) {
-        fprintf(stderr, "Usage: fibonacci <number>\n");
+        fprintf(stderr, "Usage: collatz <number>\n");
         return EXIT_FAILURE;
     }
 
