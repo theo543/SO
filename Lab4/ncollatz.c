@@ -33,13 +33,17 @@ void child(ull collatz) {
         } else {
             if((collatz >= (ULLONG_MAX / 3ull)) || (collatz * 3ull == ULLONG_MAX)) {
                 printf(" <OVERFLOW: %llu * 3 + 1 does not fit in unsigned long long>\n", collatz);
-                return EXIT_FAILURE;
+                exit(EXIT_FAILURE);
             }
             collatz = collatz * 3 + 1;
         }
         printf(" %llu", collatz);
     }
     printf("\n");
+    pid_t me = getpid();
+    pid_t parent = getppid();
+    printf("Done Parent %d Me %d\n", parent, me);
+    exit(EXIT_SUCCESS);
 }
 
 // returns true if succesfully forked a collatz process
@@ -52,8 +56,11 @@ bool try_fork(char* input) {
     pid_t pid = fork();
     if(pid < 0) {
         perror("fork");
+        return false;
     } else if(pid == 0) {
         child(collatz);
+        fprintf(stderr, "child(collatz) returned");
+        exit(EXIT_FAILURE);
     } else {
         // parent
         return true;
@@ -69,10 +76,10 @@ int main(int argc, char **argv) {
     for(int x = 1;x < argc;x++) {
         sucessful_forks += (int)try_fork(argv[x]);
     }
-    for(pit_t pid;pid = wait(NULL);) {
-        
+    for(pid_t pid;(pid = wait(NULL)) != -1;) {
+        // wait all processes
     }
     if(sucessful_forks != (argc - 1)) {
-        fprintf(stderr, "Warning: failed to start some processes. Started %d instead of %d.", sucessful_forks, (argc - 1));
+        fprintf(stderr, "Warning: failed to start some processes. Started %d instead of %d.\n", sucessful_forks, (argc - 1));
     }
 }
