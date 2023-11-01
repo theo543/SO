@@ -15,17 +15,18 @@ ull checked_strtoull(char *input) {
     char *parse_result;
     errno = 0;
     ull collatz = strtoull(input, &parse_result, 10);
-    if(*parse_result != '\0' || errno == ERANGE || strchr(input, '-')) {
-        fprintf(stderr, "Failed to parse input '%s' as unsigned long long\n", input);
+    if(*parse_result != '\0' || errno == ERANGE || collatz == 0 || strchr(input, '-')) {
+        fprintf(stderr, "Failed to parse input '%s' as positive unsigned long long\n", input);
         return 0;
-    }
-    if(collatz == 0) {
-        fprintf(stderr, "Input must be strictly positive\n");
     }
     return collatz;
 }
 
-void child(ull collatz) {
+int child(char* input) {
+    ull collatz = checked_strtoull(input);
+    if(collatz == 0) {
+        return EXIT_FAILURE;
+    }
     printf("%llu: %llu", collatz, collatz);
     while(collatz != 1ull) {
         if((collatz % 2ull) == 0) {
@@ -33,7 +34,7 @@ void child(ull collatz) {
         } else {
             if((collatz >= (ULLONG_MAX / 3ull)) || (collatz * 3ull == ULLONG_MAX)) {
                 printf(" <OVERFLOW: %llu * 3 + 1 does not fit in unsigned long long>\n", collatz);
-                exit(EXIT_FAILURE);
+                return EXIT_FAILURE;
             }
             collatz = collatz * 3 + 1;
         }
@@ -43,28 +44,7 @@ void child(ull collatz) {
     pid_t me = getpid();
     pid_t parent = getppid();
     printf("Done Parent %d Me %d\n", parent, me);
-    exit(EXIT_SUCCESS);
-}
-
-// returns true if succesfully forked a collatz process
-bool try_fork(char* input) {
-    ull collatz = checked_strtoull(input);
-    if(collatz == 0) {
-        return false;
-    }
-
-    pid_t pid = fork();
-    if(pid < 0) {
-        perror("fork");
-        return false;
-    } else if(pid == 0) {
-        child(collatz);
-        fprintf(stderr, "child(collatz) returned");
-        exit(EXIT_FAILURE);
-    } else {
-        // parent
-        return true;
-    }
+    return EXIT_SUCCESS;
 }
 
 int main(int argc, char **argv) {
@@ -72,14 +52,20 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Usage: ncollatz <number>[1, +inf)\n");
         return EXIT_FAILURE;
     }
-    int sucessful_forks = 0;
     for(int x = 1;x < argc;x++) {
-        sucessful_forks += (int)try_fork(argv[x]);
+        pid_t result = fork();
+        if(result == -1) {
+            perror("fork");
+        } else if(result == 0) {
+            // child
+            exit(child(argv[x]));
+        } else {
+            // parent
+            continue;
+        }
     }
     for(pid_t pid;(pid = wait(NULL)) != -1;) {
         // wait all processes
     }
-    if(sucessful_forks != (argc - 1)) {
-        fprintf(stderr, "Warning: failed to start some processes. Started %d instead of %d.\n", sucessful_forks, (argc - 1));
-    }
+    return EXIT_SUCCESS;
 }
