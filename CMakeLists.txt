@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(SO LANGUAGES C)
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -pedantic -fsanitize=address,undefined")
+
 add_executable(Lab1_main Lab1/main.c)
 
 add_executable(Lab2_hello Lab2/hello.c)
