@@ -43,7 +43,7 @@ uint64_t checked_strtoull(char *input) {
 }
 
 int main_mainprocess(int argc, char **argv, char **envp) {
-    printf("Starting parent %d", getpid());
+    printf("Starting Parent %d\n", getpid());
 
     int procs = argc - 1;
     int mem_per_proc = calculate_mem_per_process();
@@ -181,7 +181,7 @@ int main_subprocess(int argc, char **argv, char **envp) {
         }
     }
 
-    printf("Done Parent %d Me %d", getppid(), getpid());
+    printf("Done Parent %d Me %d\n", getppid(), getpid());
     return EXIT_SUCCESS;
 }
 
