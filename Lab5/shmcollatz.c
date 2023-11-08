@@ -109,8 +109,8 @@ int main_mainprocess(int argc, char **argv, char **envp) {
         }
     }
 
-    for(int x = 0;x<argc;x++) {
-        printf("%s:", argv[x + 1]);
+    for(int x = 1;x<argc;x++) {
+        printf("%s:", argv[x]);
         uint64_t *shm_iter = shm_ptr + mem_per_proc * (x - 1);
         while(*shm_iter != 0) {
             printf(" %ld", *shm_iter);
