@@ -73,14 +73,12 @@ int main_mainprocess(int argc, char **argv, char **envp) {
 
     for(int x = 1;x<argc;x++) {
         // send offset to subprocess via argument
-        char offset_bytes[sizeof(uint64_t) + 1];
+        char offset_str[50];
         uint64_t subprocess_offset = mem_per_proc * (x - 1);
-        // null terminator
-        offset_bytes[sizeof(uint64_t)] = 0;
-        memcpy(offset_bytes, &subprocess_offset, sizeof(uint64_t));
+        sprintf(offset_str, "%ld", subprocess_offset);
 
         // args to pass to subprocess (null-terminated)
-        char *new_argv[3] = {offset_bytes, argv[x], NULL};
+        char *new_argv[4] = {argv[0], offset_str, argv[x], NULL};
 
         pid_t pid = fork();
         if(pid == -1) {
@@ -105,10 +103,11 @@ int main_mainprocess(int argc, char **argv, char **envp) {
     }
 
     for(int x = 0;x<argc;x++) {
-        printf("%s:", argv[x]);
+        printf("%s:", argv[x + 1]);
         uint64_t *shm_iter = shm_ptr + mem_per_proc * (x - 1);
         while(*shm_iter != 0) {
             printf(" %ld", *shm_iter);
+            shm_iter++;
         }
         //TODO: report errors from subprocess via second value
     }
@@ -124,7 +123,7 @@ int main_mainprocess(int argc, char **argv, char **envp) {
 }
 
 int main_subprocess(int argc, char **argv, char **envp) {
-    int shm_fd = shm_open(SHM_NAME, O_RDONLY, S_IRUSR|S_IWUSR);
+    int shm_fd = shm_open(SHM_NAME, O_RDWR, S_IRUSR|S_IWUSR);
     if(shm_fd < 0) {
         perror("shm_open (subprocess)");
         return errno;
@@ -132,12 +131,11 @@ int main_subprocess(int argc, char **argv, char **envp) {
 
     int mem_per_process = calculate_mem_per_process();
     // get offset
-    uint64_t offset;
-    memcpy(&offset, argv[1], sizeof(uint64_t));
+    uint64_t offset = strtoull(argv[1], NULL, 10);
     // not really the full size, but we don't need that
     int shm_size = offset + mem_per_process;
 
-    uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ, MAP_SHARED, shm_fd, 0);
+    uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if(shm_ptr == MAP_FAILED) {
         perror("mmap (subprocess)");
         return errno;
@@ -152,9 +150,9 @@ int main_subprocess(int argc, char **argv, char **envp) {
         return EXIT_FAILURE;
     }
 
-    const int REMAINING_SPACE = NUMBERS_FOR_COLLATZ;
+    int remaining_space = NUMBERS_FOR_COLLATZ;
     for(;;) {
-        if(REMAINING_SPACE == 0) {
+        if(remaining_space == 0) {
             *this_process_shm = 0;
             this_process_shm++;
             *this_process_shm = ERROR_SHARED_BUFFER_OVERFLOW;
@@ -163,6 +161,7 @@ int main_subprocess(int argc, char **argv, char **envp) {
 
         *this_process_shm = collatz;
         this_process_shm++;
+        remaining_space--;
 
         if(collatz == 1) {
             *this_process_shm = 0;
