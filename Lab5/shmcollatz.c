@@ -189,7 +189,7 @@ int main(int argc, char **argv, char **envp) {
     if(argc <= 1) {
         printf("Usage: shmcollatz <nr_1 nr_2 ... nr_n> | <%s (implementation detail) OFFSET NUMBER\n", SUBPROCESS_FLAG);
         return EXIT_FAILURE;
-    } else if(argc == 3 && strcmp(argv[1], SUBPROCESS_FLAG)) {
+    } else if(argc == 3 && (strcmp(argv[1], SUBPROCESS_FLAG) == 0)) {
         exit(main_subprocess(argc, argv, envp));
     } else {
         exit(main_mainprocess(argc, argv, envp));
