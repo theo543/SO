@@ -31,7 +31,7 @@ const char *ERROR_MSG[] = {
     "Out of space to store results."
 };
 
-int calculate_mem_per_process() {
+int calculate_mem_per_process(void) {
     int page_size = getpagesize();
     int needed_memory = MAX_NUMBERS_ALLOWED * sizeof(uint64_t);
     int pages = ((needed_memory + page_size - 1) / page_size);
@@ -70,7 +70,6 @@ int main_mainprocess(int argc, char **argv, char **envp) {
         perror("mmap");
         goto err;
     }
-    memset(shm_ptr, 0, shm_size);
 
     int self_location_fd = open("/proc/self/exe", O_RDONLY);
     if(self_location_fd == -1) {
@@ -81,11 +80,13 @@ int main_mainprocess(int argc, char **argv, char **envp) {
     for(int x = 1;x<argc;x++) {
         // send offset to subprocess via argument
         char offset_str[50];
-        uint64_t subprocess_offset = mem_per_proc * (x - 1);
-        sprintf(offset_str, "%ld", subprocess_offset);
+        int subprocess_offset = mem_per_proc * (x - 1);
+        sprintf(offset_str, "%d", subprocess_offset);
 
         // args to pass to subprocess (null-terminated)
-        char *new_argv[4] = {argv[0], offset_str, argv[x], NULL};
+        // fexecve is missing a const qualifier because of backward compatibility
+        // cast away SUBPROCESS_FLAG const
+        char * new_argv[] = {argv[0], (char*)SUBPROCESS_FLAG, offset_str, argv[x], NULL};
 
         pid_t pid = fork();
         if(pid == -1) {
@@ -93,6 +94,7 @@ int main_mainprocess(int argc, char **argv, char **envp) {
         } else if(pid == 0) {
             // child
             fexecve(self_location_fd, new_argv, envp);
+
             // fexecve should not return
             perror("fexecve");
             return EXIT_FAILURE;
@@ -133,7 +135,7 @@ int main_mainprocess(int argc, char **argv, char **envp) {
     return errno;
 }
 
-int main_subprocess(int argc, char **argv, char **envp) {
+int main_subprocess(char **argv) {
     int shm_fd = shm_open(SHM_NAME, O_RDWR, S_IRUSR|S_IWUSR);
     if(shm_fd < 0) {
         perror("shm_open (subprocess)");
@@ -142,7 +144,7 @@ int main_subprocess(int argc, char **argv, char **envp) {
 
     int mem_per_process = calculate_mem_per_process();
     // get offset
-    uint64_t offset = strtoull(argv[1], NULL, 10);
+    int offset = atoi(argv[2]);
     // not really the full size, but we don't need that
     int shm_size = offset + mem_per_process;
 
@@ -153,7 +155,7 @@ int main_subprocess(int argc, char **argv, char **envp) {
     }
     uint64_t *this_process_shm = shm_ptr + offset;
 
-    uint64_t collatz = checked_strtoull(argv[2]);
+    uint64_t collatz = checked_strtoull(argv[3]);
     if(collatz == 0) {
         *this_process_shm = 0;
         this_process_shm++;
@@ -202,8 +204,8 @@ int main(int argc, char **argv, char **envp) {
     if(argc <= 1) {
         printf("Usage: shmcollatz <nr_1 nr_2 ... nr_n> | <%s (implementation detail) OFFSET NUMBER\n", SUBPROCESS_FLAG);
         return EXIT_FAILURE;
-    } else if(argc == 3 && (strcmp(argv[1], SUBPROCESS_FLAG) == 0)) {
-        exit(main_subprocess(argc, argv, envp));
+    } else if(argc == 4 && (strcmp(argv[1], SUBPROCESS_FLAG) == 0)) {
+        exit(main_subprocess(argv));
     } else {
         exit(main_mainprocess(argc, argv, envp));
     }
