@@ -20,9 +20,16 @@ const int NUMBERS_FOR_COLLATZ = 3000;
 const int MAX_NUMBERS_ALLOWED = NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA;
 
 // used by subprocess to report errors
+const uint64_t ERROR_NONE = 0;
 const uint64_t ERROR_PARSE_FAILED = 1;
 const uint64_t ERROR_INTEGER_OVERFLOW = 2;
 const uint64_t ERROR_SHARED_BUFFER_OVERFLOW = 3;
+const char *ERROR_MSG[] = {
+    "No error. (should never be printed)",
+    "Failed to parse input as positive integer.",
+    "Integer overflow.",
+    "Out of space to store results."
+};
 
 int calculate_mem_per_process() {
     int page_size = getpagesize();
@@ -109,7 +116,11 @@ int main_mainprocess(int argc, char **argv, char **envp) {
             printf(" %ld", *shm_iter);
             shm_iter++;
         }
-        //TODO: report errors from subprocess via second value
+        shm_iter++;
+        if(*shm_iter != ERROR_NONE) {
+            printf(" <%s>", ERROR_MSG[*shm_iter]);
+        }
+        printf("\n");
     }
 
     shm_unlink(SHM_NAME);
@@ -165,6 +176,8 @@ int main_subprocess(int argc, char **argv, char **envp) {
 
         if(collatz == 1) {
             *this_process_shm = 0;
+            this_process_shm++;
+            *this_process_shm = ERROR_NONE;
             break;
         }
 
