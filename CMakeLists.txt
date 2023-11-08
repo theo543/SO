@@ -9,3 +9,5 @@ add_executable(Lab2_mycopy Lab2/mycopy.c)
 add_executable(Lab4_forkls Lab4/forkls.c)
 add_executable(Lab4_collatz Lab4/collatz.c Lab4/collatz_child.h)
 add_executable(Lab4_ncollatz Lab4/ncollatz.c Lab4/collatz_child.h)
+
+add_executable(Lab5_shmcollatz Lab5/shmcollatz.c)
