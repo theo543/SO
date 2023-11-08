@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <errno.h>
+#include <limits.h>
 // Linux
 #include <fcntl.h>
 #include <unistd.h>
@@ -14,7 +15,14 @@
 
 const char *SHM_NAME = "/SHMCOLLATZ_SHARED_MEMORY_SEGMENT";
 const char *SUBPROCESS_FLAG = "-shm";
-const int MAX_NUMBERS_ALLOWED = 3000 + 2; // 3000 collatz numbers, plus 2 for reporting the result
+const int NUMBERS_FOR_METADATA = 2;
+const int NUMBERS_FOR_COLLATZ = 3000;
+const int MAX_NUMBERS_ALLOWED = NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA;
+
+// used by subprocess to report errors
+const uint64_t ERROR_PARSE_FAILED = 1;
+const uint64_t ERROR_INTEGER_OVERFLOW = 2;
+const uint64_t ERROR_SHARED_BUFFER_OVERFLOW = 3;
 
 int calculate_mem_per_process() {
     int page_size = getpagesize();
@@ -23,13 +31,12 @@ int calculate_mem_per_process() {
     return pages * page_size;
 }
 
-// strtoull but only reading valid positive integers, prints an warning to stderr and returns 0 for errors
+// strtoull but only reading valid positive integers, returns 0 for errors
 uint64_t checked_strtoull(char *input) {
     char *parse_result;
     errno = 0;
     uint64_t collatz = strtoull(input, &parse_result, 10);
     if(*parse_result != '\0' || errno == ERANGE || collatz == 0 || strchr(input, '-')) {
-        fprintf(stderr, "Failed to parse input '%s' as positive unsigned long long\n", input);
         return 0;
     }
     return collatz;
@@ -66,14 +73,14 @@ int main_mainprocess(int argc, char **argv, char **envp) {
 
     for(int x = 1;x<argc;x++) {
         // send offset to subprocess via argument
-        char offset_str[sizeof(uint64_t) + 1];
-        offset_str[sizeof(uint64_t)] = 0;
+        char offset_bytes[sizeof(uint64_t) + 1];
         uint64_t subprocess_offset = mem_per_proc * (x - 1);
-        // convert uint64_t to bytes using memcpy
-        memcpy(offset_str, &subprocess_offset, sizeof(uint64_t));
+        // null terminator
+        offset_bytes[sizeof(uint64_t)] = 0;
+        memcpy(offset_bytes, &subprocess_offset, sizeof(uint64_t));
 
         // args to pass to subprocess (null-terminated)
-        char *new_argv[3] = {offset_str, argv[x], NULL};
+        char *new_argv[3] = {offset_bytes, argv[x], NULL};
 
         pid_t pid = fork();
         if(pid == -1) {
@@ -117,7 +124,63 @@ int main_mainprocess(int argc, char **argv, char **envp) {
 }
 
 int main_subprocess(int argc, char **argv, char **envp) {
-    // TODO: connect to shared memory, receive offset and number, process one number
+    int shm_fd = shm_open(SHM_NAME, O_RDONLY, S_IRUSR|S_IWUSR);
+    if(shm_fd < 0) {
+        perror("shm_open (subprocess)");
+        return errno;
+    }
+
+    int mem_per_process = calculate_mem_per_process();
+    // get offset
+    uint64_t offset;
+    memcpy(&offset, argv[1], sizeof(uint64_t));
+    // not really the full size, but we don't need that
+    int shm_size = offset + mem_per_process;
+
+    uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ, MAP_SHARED, shm_fd, 0);
+    if(shm_ptr == MAP_FAILED) {
+        perror("mmap (subprocess)");
+        return errno;
+    }
+    uint64_t *this_process_shm = shm_ptr + offset;
+
+    uint64_t collatz = checked_strtoull(argv[2]);
+    if(collatz == 0) {
+        *this_process_shm = 0;
+        this_process_shm++;
+        *this_process_shm = ERROR_PARSE_FAILED;
+        return EXIT_FAILURE;
+    }
+
+    const int REMAINING_SPACE = NUMBERS_FOR_COLLATZ;
+    for(;;) {
+        if(REMAINING_SPACE == 0) {
+            *this_process_shm = 0;
+            this_process_shm++;
+            *this_process_shm = ERROR_SHARED_BUFFER_OVERFLOW;
+            return EXIT_FAILURE;
+        }
+
+        *this_process_shm = collatz;
+        this_process_shm++;
+
+        if(collatz == 1) {
+            *this_process_shm = 0;
+            break;
+        }
+
+        if((collatz % 2ull) == 0) {
+            collatz /= 2ull;
+        } else {
+            if((collatz >= (ULLONG_MAX / 3ull)) || (collatz * 3ull == ULLONG_MAX)) {
+                *this_process_shm = 0;
+                this_process_shm++;
+                *this_process_shm = ERROR_INTEGER_OVERFLOW;
+                return EXIT_FAILURE;
+            }
+            collatz = collatz * 3 + 1;
+        }
+    }
 
     printf("Done Parent %d Me %d", getppid(), getpid());
     return EXIT_SUCCESS;
@@ -127,7 +190,7 @@ int main(int argc, char **argv, char **envp) {
     if(argc <= 1) {
         printf("Usage: shmcollatz <nr_1 nr_2 ... nr_n> | <%s (implementation detail) OFFSET NUMBER\n", SUBPROCESS_FLAG);
         return EXIT_FAILURE;
-    } else if(argc == 2 && strcmp(argv[1], SUBPROCESS_FLAG)) {
+    } else if(argc == 3 && strcmp(argv[1], SUBPROCESS_FLAG)) {
         exit(main_subprocess(argc, argv, envp));
     } else {
         exit(main_mainprocess(argc, argv, envp));
