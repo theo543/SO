@@ -24,11 +24,13 @@ const uint64_t ERROR_NONE = 0;
 const uint64_t ERROR_PARSE_FAILED = 1;
 const uint64_t ERROR_INTEGER_OVERFLOW = 2;
 const uint64_t ERROR_SHARED_BUFFER_OVERFLOW = 3;
+const uint64_t ERROR_NO_RESPONSE = 4;
 const char *ERROR_MSG[] = {
     "No error. (should never be printed)",
     "Failed to parse input as positive integer.",
     "Integer overflow.",
-    "Out of space to store results."
+    "Out of space to store results.",
+    "Did not receive data from subprocess."
 };
 
 int calculate_mem_per_process(void) {
@@ -59,22 +61,24 @@ int main_mainprocess(int argc, char **argv, char **envp) {
     int shm_fd = shm_open(SHM_NAME, O_CREAT|O_RDWR, S_IRUSR|S_IWUSR);
     if(shm_fd < 0) {
         perror("shm_open");
-        goto err;
+        return errno;
     }
     if(ftruncate(shm_fd, shm_size) == -1) {
         perror("ftruncate");
-        goto err;
+        return errno;
     }
     uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if(shm_ptr == MAP_FAILED) {
         perror("mmap");
-        goto err;
+        shm_unlink(SHM_NAME);
+        return errno;
     }
 
     int self_location_fd = open("/proc/self/exe", O_RDONLY);
     if(self_location_fd == -1) {
         perror("open(\"/proc/self/exe\")");
-        goto err;
+        munmap(shm_ptr, shm_size);
+        shm_unlink(SHM_NAME);
     }
 
     for(int x = 1;x<argc;x++) {
@@ -82,6 +86,9 @@ int main_mainprocess(int argc, char **argv, char **envp) {
         char offset_str[50];
         int subprocess_offset = mem_per_proc * (x - 1);
         sprintf(offset_str, "%d", subprocess_offset);
+        uint64_t *subproc_shm = (uint64_t*)((char*)shm_ptr + subprocess_offset);
+        *subproc_shm = 0;
+        *(subproc_shm + 1) = ERROR_NO_RESPONSE;
 
         // args to pass to subprocess (null-terminated)
         // fexecve is missing a const qualifier because of backward compatibility
@@ -125,21 +132,19 @@ int main_mainprocess(int argc, char **argv, char **envp) {
         printf("\n");
     }
 
+    munmap(shm_ptr, shm_size);
     shm_unlink(SHM_NAME);
+    close(self_location_fd);
     return EXIT_SUCCESS;
-
-    err:
-    if(shm_fd >= 0) {
-        shm_unlink(SHM_NAME);
-    }
-    return errno;
 }
 
 int main_subprocess(char **argv) {
+    int retcode = 0;
     int shm_fd = shm_open(SHM_NAME, O_RDWR, S_IRUSR|S_IWUSR);
     if(shm_fd < 0) {
         perror("shm_open (subprocess)");
-        return errno;
+        retcode = errno;
+        goto exit;
     }
 
     int mem_per_process = calculate_mem_per_process();
@@ -151,24 +156,25 @@ int main_subprocess(char **argv) {
     uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, offset);
     if(shm_ptr == MAP_FAILED) {
         perror("mmap (subprocess)");
-        return errno;
+        retcode = errno;
+        goto exit;
     }
 
     uint64_t collatz = checked_strtoull(argv[3]);
     if(collatz == 0) {
         *shm_ptr = 0;
-        shm_ptr++;
-        *shm_ptr = ERROR_PARSE_FAILED;
-        return EXIT_FAILURE;
+        *(shm_ptr + 1) = ERROR_PARSE_FAILED;
+        retcode = EXIT_FAILURE;
+        goto exit;
     }
 
     int remaining_space = NUMBERS_FOR_COLLATZ;
     for(;;) {
         if(remaining_space == 0) {
             *shm_ptr = 0;
-            shm_ptr++;
-            *shm_ptr = ERROR_SHARED_BUFFER_OVERFLOW;
-            return EXIT_FAILURE;
+            *(shm_ptr + 1) = ERROR_SHARED_BUFFER_OVERFLOW;
+            retcode = EXIT_FAILURE;
+            goto exit;
         }
 
         *shm_ptr = collatz;
@@ -177,9 +183,9 @@ int main_subprocess(char **argv) {
 
         if(collatz == 1) {
             *shm_ptr = 0;
-            shm_ptr++;
-            *shm_ptr = ERROR_NONE;
-            break;
+            *(shm_ptr + 1) = ERROR_NONE;
+            retcode = 0;
+            goto exit;
         }
 
         if((collatz % 2ull) == 0) {
@@ -187,16 +193,23 @@ int main_subprocess(char **argv) {
         } else {
             if((collatz >= (ULLONG_MAX / 3ull)) || (collatz * 3ull == ULLONG_MAX)) {
                 *shm_ptr = 0;
-                shm_ptr++;
-                *shm_ptr = ERROR_INTEGER_OVERFLOW;
-                return EXIT_FAILURE;
+                *(shm_ptr + 1) = ERROR_INTEGER_OVERFLOW;
+                retcode = EXIT_FAILURE;
+                goto exit;
             }
             collatz = collatz * 3 + 1;
         }
     }
 
-    printf("Done Parent %d Me %d\n", getppid(), getpid());
-    return EXIT_SUCCESS;
+    exit:
+    printf("%s Parent %d Me %d\n", retcode == 0 ? "Done" : "Error", getppid(), getpid());
+    if(shm_fd != -1) {
+        close(shm_fd);
+        if(shm_ptr != MAP_FAILED) {
+            munmap(shm_ptr, shm_size);
+        }
+    }
+    return retcode;
 }
 
 int main(int argc, char **argv, char **envp) {
