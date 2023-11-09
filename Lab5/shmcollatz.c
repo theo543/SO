@@ -113,7 +113,7 @@ int main_mainprocess(int argc, char **argv, char **envp) {
 
     for(int x = 1;x<argc;x++) {
         printf("%s:", argv[x]);
-        uint64_t *shm_iter = shm_ptr + mem_per_proc * (x - 1);
+        uint64_t *shm_iter = (uint64_t*)((char*)shm_ptr + (mem_per_proc * (x - 1)));
         while(*shm_iter != 0) {
             printf(" %ld", *shm_iter);
             shm_iter++;
@@ -148,38 +148,37 @@ int main_subprocess(char **argv) {
     // not really the full size, but we don't need that
     int shm_size = offset + mem_per_process;
 
-    uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, offset);
     if(shm_ptr == MAP_FAILED) {
         perror("mmap (subprocess)");
         return errno;
     }
-    uint64_t *this_process_shm = shm_ptr + offset;
 
     uint64_t collatz = checked_strtoull(argv[3]);
     if(collatz == 0) {
-        *this_process_shm = 0;
-        this_process_shm++;
-        *this_process_shm = ERROR_PARSE_FAILED;
+        *shm_ptr = 0;
+        shm_ptr++;
+        *shm_ptr = ERROR_PARSE_FAILED;
         return EXIT_FAILURE;
     }
 
     int remaining_space = NUMBERS_FOR_COLLATZ;
     for(;;) {
         if(remaining_space == 0) {
-            *this_process_shm = 0;
-            this_process_shm++;
-            *this_process_shm = ERROR_SHARED_BUFFER_OVERFLOW;
+            *shm_ptr = 0;
+            shm_ptr++;
+            *shm_ptr = ERROR_SHARED_BUFFER_OVERFLOW;
             return EXIT_FAILURE;
         }
 
-        *this_process_shm = collatz;
-        this_process_shm++;
+        *shm_ptr = collatz;
+        shm_ptr++;
         remaining_space--;
 
         if(collatz == 1) {
-            *this_process_shm = 0;
-            this_process_shm++;
-            *this_process_shm = ERROR_NONE;
+            *shm_ptr = 0;
+            shm_ptr++;
+            *shm_ptr = ERROR_NONE;
             break;
         }
 
@@ -187,9 +186,9 @@ int main_subprocess(char **argv) {
             collatz /= 2ull;
         } else {
             if((collatz >= (ULLONG_MAX / 3ull)) || (collatz * 3ull == ULLONG_MAX)) {
-                *this_process_shm = 0;
-                this_process_shm++;
-                *this_process_shm = ERROR_INTEGER_OVERFLOW;
+                *shm_ptr = 0;
+                shm_ptr++;
+                *shm_ptr = ERROR_INTEGER_OVERFLOW;
                 return EXIT_FAILURE;
             }
             collatz = collatz * 3 + 1;
