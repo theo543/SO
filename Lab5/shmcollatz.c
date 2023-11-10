@@ -85,10 +85,10 @@ int main_mainprocess(int argc, char **argv, char **envp) {
     for(int x = 1;x<argc;x++) {
         // send offset to subprocess via argument
         char offset_str[50];
-        int subprocess_offset = MEMORY_PER_PROCESS * (x - 1);
+        int subprocess_offset = TOTAL_NUMBERS_PER_PROCESS * (x - 1);
         sprintf(offset_str, "%d", subprocess_offset);
 
-        uint64_t *subproc_shm = (uint64_t*)((char*)shm_ptr + subprocess_offset);
+        uint64_t *subproc_shm = shm_ptr + subprocess_offset;
         *subproc_shm = 0;
         *(subproc_shm + 1) = ERROR_NO_RESPONSE;
 
@@ -132,7 +132,7 @@ int main_mainprocess(int argc, char **argv, char **envp) {
 
     for(int x = 1;x<argc;x++) {
         printf("%s:", argv[x]);
-        uint64_t *shm_iter = (uint64_t*)((char*)shm_ptr + (MEMORY_PER_PROCESS * (x - 1)));
+        uint64_t *shm_iter = shm_ptr + TOTAL_NUMBERS_PER_PROCESS * (x - 1);
         while(*shm_iter != 0) {
             printf(" %ld", *shm_iter);
             shm_iter++;
@@ -162,16 +162,17 @@ int main_subprocess(char **argv) {
     // get offset
     int offset = atoi(argv[2]);
     // not really the full size, but we don't need that
-    int shm_size = offset + MEMORY_PER_PROCESS;
+    int shm_size = offset * sizeof(uint64_t) + MEMORY_PER_PROCESS;
 
-    char *start_shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    uint64_t *shm_ptr = (uint64_t*)(start_shm_ptr + offset);
+    uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if(shm_ptr == MAP_FAILED) {
         perror("mmap (subprocess)");
         retcode = errno;
         goto exit;
     }
-    uint64_t collatz = checked_strtoull((char*)(shm_ptr + NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA));
+    shm_ptr += offset;
+    char *shm_input = (char*)(shm_ptr + NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA);
+    uint64_t collatz = checked_strtoull(shm_input);
     if(collatz == 0) {
         *shm_ptr = 0;
         *(shm_ptr + 1) = ERROR_PARSE_FAILED;
