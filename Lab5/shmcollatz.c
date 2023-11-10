@@ -19,7 +19,8 @@ const char *SUBPROCESS_FLAG = "-shm";
 const int NUMBERS_FOR_COLLATZ = 3000; // up to 3000 numbers in the sequence
 const int NUMBERS_FOR_METADATA = 2; // the collatz numbers are terminated by a 0, then an error code follows
 const int NUMBERS_FOR_INPUT = 10; // always at the end of the memory, 40 chars, more than enough for inputs that fit in 64 bits
-const int MAX_NUMBERS_ALLOWED = NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA + NUMBERS_FOR_INPUT;
+const int TOTAL_NUMBERS_PER_PROCESS = NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA + NUMBERS_FOR_INPUT;
+const int MEMORY_PER_PROCESS = TOTAL_NUMBERS_PER_PROCESS * sizeof(uint64_t);
 
 // used by subprocess to report errors
 const uint64_t ERROR_NONE = 0;
@@ -34,13 +35,6 @@ const char *ERROR_MSG[] = {
     "Out of space to store results.",
     "Did not receive data from subprocess."
 };
-
-int calculate_mem_per_process(void) {
-    int page_size = getpagesize();
-    int needed_memory = MAX_NUMBERS_ALLOWED * sizeof(uint64_t);
-    int pages = ((needed_memory + page_size - 1) / page_size);
-    return pages * page_size;
-}
 
 // strtoull but only reading valid positive integers, returns 0 for errors
 uint64_t checked_strtoull(char *input) {
@@ -57,8 +51,13 @@ int main_mainprocess(int argc, char **argv, char **envp) {
     printf("Starting Parent %d\n", getpid());
 
     int procs = argc - 1;
-    int mem_per_proc = calculate_mem_per_process();
-    int shm_size = procs * mem_per_proc;
+    int pagesize = getpagesize();
+    int minimum_mem_size = procs * MEMORY_PER_PROCESS;
+    // round up to pagesize multiple
+    int shm_size = (minimum_mem_size / pagesize) * pagesize;
+    if(minimum_mem_size % pagesize != 0) {
+        shm_size += pagesize;
+    }
 
     int shm_fd = shm_open(SHM_NAME, O_CREAT|O_RDWR, S_IRUSR|S_IWUSR);
     if(shm_fd < 0) {
@@ -86,7 +85,7 @@ int main_mainprocess(int argc, char **argv, char **envp) {
     for(int x = 1;x<argc;x++) {
         // send offset to subprocess via argument
         char offset_str[50];
-        int subprocess_offset = mem_per_proc * (x - 1);
+        int subprocess_offset = MEMORY_PER_PROCESS * (x - 1);
         sprintf(offset_str, "%d", subprocess_offset);
 
         uint64_t *subproc_shm = (uint64_t*)((char*)shm_ptr + subprocess_offset);
@@ -133,7 +132,7 @@ int main_mainprocess(int argc, char **argv, char **envp) {
 
     for(int x = 1;x<argc;x++) {
         printf("%s:", argv[x]);
-        uint64_t *shm_iter = (uint64_t*)((char*)shm_ptr + (mem_per_proc * (x - 1)));
+        uint64_t *shm_iter = (uint64_t*)((char*)shm_ptr + (MEMORY_PER_PROCESS * (x - 1)));
         while(*shm_iter != 0) {
             printf(" %ld", *shm_iter);
             shm_iter++;
@@ -160,13 +159,13 @@ int main_subprocess(char **argv) {
         goto exit;
     }
 
-    int mem_per_process = calculate_mem_per_process();
     // get offset
     int offset = atoi(argv[2]);
     // not really the full size, but we don't need that
-    int shm_size = offset + mem_per_process;
+    int shm_size = offset + MEMORY_PER_PROCESS;
 
-    uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, offset);
+    char *start_shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    uint64_t *shm_ptr = (uint64_t*)(start_shm_ptr + offset);
     if(shm_ptr == MAP_FAILED) {
         perror("mmap (subprocess)");
         retcode = errno;
