@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include <limits.h>
+#include <ctype.h>
 // Linux
 #include <fcntl.h>
 #include <unistd.h>
@@ -15,9 +16,10 @@
 
 const char *SHM_NAME = "/SHMCOLLATZ_SHARED_MEMORY_SEGMENT";
 const char *SUBPROCESS_FLAG = "-shm";
-const int NUMBERS_FOR_METADATA = 2;
-const int NUMBERS_FOR_COLLATZ = 3000;
-const int MAX_NUMBERS_ALLOWED = NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA;
+const int NUMBERS_FOR_COLLATZ = 3000; // up to 3000 numbers in the sequence
+const int NUMBERS_FOR_METADATA = 2; // the collatz numbers are terminated by a 0, then an error code follows
+const int NUMBERS_FOR_INPUT = 10; // always at the end of the memory, 40 chars, more than enough for inputs that fit in 64 bits
+const int MAX_NUMBERS_ALLOWED = NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA + NUMBERS_FOR_INPUT;
 
 // used by subprocess to report errors
 const uint64_t ERROR_NONE = 0;
@@ -86,14 +88,25 @@ int main_mainprocess(int argc, char **argv, char **envp) {
         char offset_str[50];
         int subprocess_offset = mem_per_proc * (x - 1);
         sprintf(offset_str, "%d", subprocess_offset);
+
         uint64_t *subproc_shm = (uint64_t*)((char*)shm_ptr + subprocess_offset);
         *subproc_shm = 0;
         *(subproc_shm + 1) = ERROR_NO_RESPONSE;
 
+        // since atoi skips any amount of whitespace, don't send any of it to the child
+        char* input_copy_start = argv[x];
+        while(isspace(*input_copy_start)) {
+            input_copy_start++;
+        }
+
+        char *subproc_shm_input = (char*)(subproc_shm + NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA);
+        *subproc_shm_input = '\0';
+        strncat(subproc_shm_input, input_copy_start, sizeof(uint64_t) * NUMBERS_FOR_INPUT - 1);
+
         // args to pass to subprocess (null-terminated)
         // fexecve is missing a const qualifier because of backward compatibility
         // cast away SUBPROCESS_FLAG const
-        char * new_argv[] = {argv[0], (char*)SUBPROCESS_FLAG, offset_str, argv[x], NULL};
+        char * new_argv[] = {argv[0], (char*)SUBPROCESS_FLAG, offset_str, NULL};
 
         pid_t pid = fork();
         if(pid == -1) {
@@ -159,8 +172,7 @@ int main_subprocess(char **argv) {
         retcode = errno;
         goto exit;
     }
-
-    uint64_t collatz = checked_strtoull(argv[3]);
+    uint64_t collatz = checked_strtoull((char*)(shm_ptr + NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA));
     if(collatz == 0) {
         *shm_ptr = 0;
         *(shm_ptr + 1) = ERROR_PARSE_FAILED;
@@ -214,9 +226,9 @@ int main_subprocess(char **argv) {
 
 int main(int argc, char **argv, char **envp) {
     if(argc <= 1) {
-        printf("Usage: shmcollatz <nr_1 nr_2 ... nr_n> | <%s (implementation detail) OFFSET NUMBER\n", SUBPROCESS_FLAG);
+        printf("Usage: shmcollatz <nr_1 nr_2 ... nr_n> | <%s (implementation detail) OFFSET\n", SUBPROCESS_FLAG);
         return EXIT_FAILURE;
-    } else if(argc == 4 && (strcmp(argv[1], SUBPROCESS_FLAG) == 0)) {
+    } else if(argc == 3 && (strcmp(argv[1], SUBPROCESS_FLAG) == 0)) {
         exit(main_subprocess(argv));
     } else {
         exit(main_mainprocess(argc, argv, envp));
