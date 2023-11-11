@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <ctype.h>
+#include <inttypes.h>
 // Linux
 #include <fcntl.h>
 #include <unistd.h>
@@ -136,7 +137,7 @@ int main_mainprocess(int argc, char **argv, char **envp) {
         printf("%s:", argv[x]);
         uint64_t *shm_iter = shm_ptr + TOTAL_NUMBERS_PER_PROCESS * (x - 1);
         while(*shm_iter != 0) {
-            printf(" %ld", *shm_iter);
+            printf("%" PRIu64 " ", *shm_iter);
             shm_iter++;
         }
         shm_iter++;
