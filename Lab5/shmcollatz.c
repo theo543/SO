@@ -47,17 +47,20 @@ uint64_t checked_strtoull(char *input) {
     return collatz;
 }
 
+int round_up_mem(int mem_size, int page_size) {
+    int rem = mem_size % page_size;
+    if (rem == 0) {
+        return mem_size;
+    }
+    return mem_size + page_size - rem;
+}
+
 int main_mainprocess(int argc, char **argv, char **envp) {
     printf("Starting Parent %d\n", getpid());
 
     int procs = argc - 1;
     int pagesize = getpagesize();
-    int minimum_mem_size = procs * MEMORY_PER_PROCESS;
-    // round up to pagesize multiple
-    int shm_size = (minimum_mem_size / pagesize) * pagesize;
-    if(minimum_mem_size % pagesize != 0) {
-        shm_size += pagesize;
-    }
+    int shm_size = round_up_mem(procs * MEMORY_PER_PROCESS, pagesize);
 
     int shm_fd = shm_open(SHM_NAME, O_CREAT|O_RDWR, S_IRUSR|S_IWUSR);
     if(shm_fd < 0) {
@@ -83,11 +86,10 @@ int main_mainprocess(int argc, char **argv, char **envp) {
     }
 
     for(int x = 1;x<argc;x++) {
-        // send offset to subprocess via argument
-        char offset_str[50];
-        int subprocess_offset = TOTAL_NUMBERS_PER_PROCESS * (x - 1);
-        sprintf(offset_str, "%d", subprocess_offset);
+        char process_index[50];
+        sprintf(process_index, "%d", x - 1);
 
+        int subprocess_offset = TOTAL_NUMBERS_PER_PROCESS * (x - 1);
         uint64_t *subproc_shm = shm_ptr + subprocess_offset;
         *subproc_shm = 0;
         *(subproc_shm + 1) = ERROR_NO_RESPONSE;
@@ -105,7 +107,7 @@ int main_mainprocess(int argc, char **argv, char **envp) {
         // args to pass to subprocess (null-terminated)
         // fexecve is missing a const qualifier because of backward compatibility
         // cast away SUBPROCESS_FLAG const
-        char * new_argv[] = {argv[0], (char*)SUBPROCESS_FLAG, offset_str, NULL};
+        char * new_argv[] = {argv[0], (char*)SUBPROCESS_FLAG, process_index, NULL};
 
         pid_t pid = fork();
         if(pid == -1) {
@@ -159,10 +161,10 @@ int main_subprocess(char **argv) {
         goto exit;
     }
 
-    // get offset
-    int offset = atoi(argv[2]);
+    int subprocess_index = atoi(argv[2]);
+    int prev_proc_numbers = TOTAL_NUMBERS_PER_PROCESS * subprocess_index;
     // not really the full size, but we don't need that
-    int shm_size = offset * sizeof(uint64_t) + MEMORY_PER_PROCESS;
+    int shm_size = round_up_mem((prev_proc_numbers + TOTAL_NUMBERS_PER_PROCESS) * sizeof(uint64_t), getpagesize());
 
     uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if(shm_ptr == MAP_FAILED) {
@@ -170,7 +172,7 @@ int main_subprocess(char **argv) {
         retcode = errno;
         goto exit;
     }
-    shm_ptr += offset;
+    shm_ptr += prev_proc_numbers;
     char *shm_input = (char*)(shm_ptr + NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA);
     uint64_t collatz = checked_strtoull(shm_input);
     if(collatz == 0) {
@@ -226,7 +228,7 @@ int main_subprocess(char **argv) {
 
 int main(int argc, char **argv, char **envp) {
     if(argc <= 1) {
-        printf("Usage: shmcollatz <nr_1 nr_2 ... nr_n> | <%s (implementation detail) OFFSET\n", SUBPROCESS_FLAG);
+        printf("Usage: shmcollatz <nr_1 nr_2 ... nr_n> | <%s (implementation detail) SUBPROCESS_INDEX\n", SUBPROCESS_FLAG);
         return EXIT_FAILURE;
     } else if(argc == 3 && (strcmp(argv[1], SUBPROCESS_FLAG) == 0)) {
         exit(main_subprocess(argv));
