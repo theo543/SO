@@ -156,6 +156,7 @@ int main_mainprocess(int argc, char **argv, char **envp) {
 int main_subprocess(char **argv) {
     int retcode = 0;
     int shm_fd = shm_open(SHM_NAME, O_RDWR, S_IRUSR|S_IWUSR);
+    uint64_t *shm_ptr = MAP_FAILED;
     if(shm_fd < 0) {
         perror("shm_open (subprocess)");
         retcode = errno;
@@ -167,7 +168,7 @@ int main_subprocess(char **argv) {
     // not really the full size, but we don't need that
     int shm_size = round_up_mem((prev_proc_numbers + TOTAL_NUMBERS_PER_PROCESS) * sizeof(uint64_t), getpagesize());
 
-    uint64_t *shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if(shm_ptr == MAP_FAILED) {
         perror("mmap (subprocess)");
         retcode = errno;
