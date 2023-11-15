@@ -2,6 +2,7 @@
 #include <inttypes.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -38,29 +39,47 @@ void sem_post_noerr(sem_t *sem) {
 const int RUNNING_THREADS_ALLOWED = 16;
 const int RUNNING_OR_IDLE_THREADS_ALLOWED = RUNNING_THREADS_ALLOWED * 2;
 
+#define ASSERT_LONGLONG_IS_I64 static_assert(sizeof(long long) == sizeof(i64), "long long must equal i64")
+#ifndef NO_BUILDIN_OVERFLOW_CHECKS
+    #define NO_BUILTIN_OVERFLOW_CHECKS 0
+#endif
+
 bool multiply(i64 x, i64 y, i64 *out) {
-    #if __GNUC__ | __clang__
-        if(sizeof(i64) == sizeof(long long int)) {
-            return __builtin_smull_overflow(x, y, out);
+    #if (__GNUC__ || __clang__) && !NO_BUILTIN_OVERFLOW_CHECKS
+        ASSERT_LONGLONG_IS_I64;
+        return __builtin_smulll_overflow(x, y, (long long*)out);
+    #else
+        if(y > INT64_MAX) {
+            if(x > INT64_MAX / y || x < INT64_MAX / y) {
+                return true;
+            }
+        } else if(y < 0) {
+            if(y == -1 && x == INT64_MIN) {
+                return true;
+            }
+            if(x < INT64_MAX / y || x > INT64_MAX / y) {
+                return true;
+            }
         }
+
+        *out = x * y;
+        return false;
     #endif
-    if(y > INT64_MAX) {
-        if(x > INT64_MAX / y || x < INT64_MAX / y) {
-            return true;
-        }
-    } else if(y < 0) {
-        if(y == -1 && x == INT64_MIN) {
-            return true;
-        }
-        if(x < INT64_MAX / y || x > INT64_MAX / y) {
-            return true;
-        }
-    }
-
-    *out = x * y;
-    return false;
 }
-
+bool add(i64 x, i64 y, i64 *out) {
+    #if (__GNUC__ || __clang__) && !NO_BUILTIN_OVERFLOW_CHECKS
+        ASSERT_LONGLONG_IS_I64;
+        return __builtin_saddll_overflow(x, y, (long long*)out);
+    #else
+        if(y > 0 && x > INT64_MAX - y) {
+            return true;
+        } else if(y < 0 && x < INT64_MIN - y) {
+            return true;
+        }
+        *out = x + y;
+        return false;
+    #endif
+}
 typedef struct matrix {
     i64 *data;
     i64 rows;
@@ -121,12 +140,11 @@ void * matmult_thread(void *args_void) {
     i64 sum = 0;
     for(i64 k = 0;k < a.columns;k++) {
         i64 result;
-        if(multiply(MATELEM(a, i, k), MATELEM(b, k, j), &result)) {
+        if(multiply(MATELEM(a, i, k), MATELEM(b, k, j), &result) || add(sum, result, &sum)) {
             sem_wait_noerr(&report_overflow_and_exit);
             fprintf(stderr, "Overflow calculating result at position %"PRIi64"x%"PRIi64"\n", i, j);
             exit(EXIT_FAILURE);
         }
-        sum += result;
     }
     MATELEM(out, i, j) = sum;
     free(args);
