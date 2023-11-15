@@ -13,3 +13,8 @@ add_executable(Lab4_collatz Lab4/collatz.c Lab4/collatz_child.h)
 add_executable(Lab4_ncollatz Lab4/ncollatz.c Lab4/collatz_child.h)
 
 add_executable(Lab5_shmcollatz Lab5/shmcollatz.c)
+
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads)
+add_executable(Lab6_strrev Lab6/strrev.c)
+target_link_libraries(Lab6_strrev Threads::Threads)
