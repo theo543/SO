@@ -138,7 +138,6 @@ void * matmult_thread(void *args_void) {
         i64 old = __atomic_fetch_add(&thread_counter, 1, __ATOMIC_RELAXED);
         args->peak_threads = (old + 1);
     }
-    MATELEM(out, args->out_row, args->out_col) = args->out_row * out.columns + args->out_col;
     i64 i = args->out_row;
     i64 j = args->out_col;
     i64 sum = 0;
