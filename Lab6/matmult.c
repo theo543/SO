@@ -5,10 +5,15 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <stdio.h>
 #include <errno.h>
 
 #define i64 int64_t
+
+const char* COUNT_FLAG = "--peak-threads";
+bool counting_threads = false;
+i64 _Atomic thread_counter = 0;
 
 sem_t threads_finished;
 sem_t report_overflow_and_exit;
@@ -124,10 +129,15 @@ void read_matrix(matrix_t *m) {
 typedef struct matmult_thread_args {
     i64 out_row;
     i64 out_col;
+    i64 peak_threads;
 } matmult_args_t;
 
 void * matmult_thread(void *args_void) {
     matmult_args_t *args = args_void;
+    if(counting_threads) {
+        i64 old = __atomic_fetch_add(&thread_counter, 1, __ATOMIC_RELAXED);
+        args->peak_threads = (old + 1);
+    }
     MATELEM(out, args->out_row, args->out_col) = args->out_row * out.columns + args->out_col;
     i64 i = args->out_row;
     i64 j = args->out_col;
@@ -142,10 +152,22 @@ void * matmult_thread(void *args_void) {
     }
     MATELEM(out, i, j) = sum;
     sem_post_noerr(&threads_finished);
+    if(counting_threads) {
+        __atomic_fetch_sub(&thread_counter, 1, __ATOMIC_RELAXED);
+    }
     return NULL;
 }
 
-int main() {
+int main(int argc, char **argv) {
+    for(int x = 1;x < argc;x++) {
+        if(strcmp(argv[x], COUNT_FLAG) == 0) {
+            counting_threads = true;
+        } else {
+            fprintf(stderr, "Unknown argument: %s\n", argv[x]);
+            return EXIT_FAILURE;
+        }
+    }
+
     atexit(free_mats_atexit);
     sem_init_noerr(&threads_finished, 0);
     sem_init_noerr(&report_overflow_and_exit, 1);
@@ -167,7 +189,7 @@ int main() {
         perror("pthread_attr_setdetachstate");
         return errno;
     }
-    matmult_args_t *args_mem = malloc(out.rows * out.columns * sizeof(matmult_args_t));
+    matmult_args_t *args_mem = calloc(out.rows * out.columns, sizeof(matmult_args_t));
     for(i64 row = 0;row < out.rows;row++) {
         for(i64 col = 0;col < out.columns;col++) {
             pthread_t thr;
@@ -183,6 +205,14 @@ int main() {
     pthread_attr_destroy(&detached);
     for(i64 x = 0;x < out.rows * out.columns;x++) {
         sem_wait_noerr(&threads_finished);
+    }
+    if(counting_threads) {
+        i64 peak_threads = 0;
+        for(i64 i = 0;i < out.rows * out.columns;i++) {
+            if(args_mem[i].peak_threads > peak_threads)
+                peak_threads = args_mem[i].peak_threads;
+        }
+        fprintf(stderr, "Peak number of threads: %"PRIi64"\n", peak_threads);
     }
     free(args_mem);
     printf("%"PRIi64" %"PRIi64"\n", out.rows, out.columns);

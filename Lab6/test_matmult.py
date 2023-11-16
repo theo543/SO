@@ -10,13 +10,15 @@ def mat_to_file(mat, fd):
     np.savetxt(fd, mat, fmt="%i")
 
 def one_test(location) -> bool:
+    if len(sys.argv) > 2:
+        print(f"Fowarding arguments {sys.argv[2:]}")
     gen = np.random.default_rng()
     [m, p, n] = gen.integers(1, MAX_DIMENSION, size=3)
     print(f"Testing {m}x{p} matrix times {p}x{n} matrix:")
     mat_a = gen.integers(1, MAX_VALUE, size=(m, p), dtype=np.int64)
     mat_b = gen.integers(1, MAX_VALUE, size=(p, n), dtype=np.int64)
     mat_out = np.matmul(mat_a, mat_b)
-    proc = subprocess.Popen([location], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=sys.stderr.fileno(), encoding='utf-8')
+    proc = subprocess.Popen([location] + sys.argv[2:], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=sys.stderr.fileno(), encoding='utf-8')
     stdin = proc.stdin
     stdout = proc.stdout
     mat_to_file(mat_a, stdin)
