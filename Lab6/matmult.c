@@ -1,5 +1,6 @@
 #include <semaphore.h>
 #include <inttypes.h>
+#include <stdatomic.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <assert.h>
@@ -127,7 +128,7 @@ typedef struct matmult_thread_args {
 void * matmult_thread(void *args_void) {
     matmult_args_t *args = args_void;
     if(counting_threads) {
-        i64 old = __atomic_fetch_add(&thread_counter, 1, __ATOMIC_RELAXED);
+        i64 old = atomic_fetch_add(&thread_counter, 1);
         args->peak_threads = (old + 1);
     }
     i64 i = args->out_row;
@@ -144,7 +145,7 @@ void * matmult_thread(void *args_void) {
     MATELEM(out, i, j) = sum;
     sem_post_noerr(&threads_finished);
     if(counting_threads) {
-        __atomic_fetch_sub(&thread_counter, 1, __ATOMIC_RELAXED);
+        atomic_fetch_sub(&thread_counter, 1);
     }
     return NULL;
 }
