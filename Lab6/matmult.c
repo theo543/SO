@@ -90,14 +90,6 @@ matrix_t a, b, out;
 
 #define MATELEM(MATRIX, ROW, COLUMN) ((MATRIX).data[ROW * ((MATRIX).columns) + COLUMN])
 
-void free_mats_atexit() {
-    // These don't actually need to be freed, since they live until the end of the program,
-    // the OS would free them. But that causes noise when using valgrind.
-    if(a.data) free(a.data);
-    if(b.data) free(b.data);
-    if(out.data) free(out.data);
-}
-
 void alloc_mat(matrix_t *mat) {
     i64 alloc_size;
     if(multiply(mat->rows, mat->columns, &alloc_size) || multiply(alloc_size, sizeof(i64), &alloc_size)) {
@@ -167,7 +159,6 @@ int main(int argc, char **argv) {
         }
     }
 
-    atexit(free_mats_atexit);
     sem_init_noerr(&threads_finished, 0);
     sem_init_noerr(&report_overflow_and_exit, 1);
     read_matrix(&a);
@@ -221,5 +212,8 @@ int main(int argc, char **argv) {
         }
         printf("\n");
     }
+    free(a.data);
+    free(b.data);
+    free(out.data);
     return EXIT_SUCCESS;
 }
