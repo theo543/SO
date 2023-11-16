@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(SO LANGUAGES C)
 
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
+
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -pedantic -fsanitize=address,undefined")
 
 add_executable(Lab1_main Lab1/main.c)

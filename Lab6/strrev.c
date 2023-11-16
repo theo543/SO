@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <errno.h>
 
+#include "macros.h"
+
 struct strrev_thread_args {
     const char *string;
     char **return_return;
@@ -35,14 +37,8 @@ int main(int argc, char **argv) {
         &result
     };
     pthread_t thr;
-    if(pthread_create(&thr, NULL, strrev_thread, &args)) {
-        perror("pthread_create");
-        return errno;
-    }
-    if(pthread_join(thr, NULL)) {
-        perror("pthread_join");
-        return errno;
-    }
+    PT_CALL(pthread_create(&thr, NULL, strrev_thread, &args));
+    PT_CALL(pthread_join(thr, NULL));
     if(result == NULL) {
         fprintf(stderr, "Unknown error in strrev_thread\n");
         return EXIT_FAILURE;
