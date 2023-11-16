@@ -147,7 +147,6 @@ void * matmult_thread(void *args_void) {
         }
     }
     MATELEM(out, i, j) = sum;
-    free(args);
     sem_post_noerr(&threads_running);
     sem_post_noerr(&threads_running_or_idle);
     sem_post_noerr(&threads_finished);
@@ -178,11 +177,12 @@ int main() {
         perror("pthread_attr_setdetachstate");
         return errno;
     }
+    matmult_args_t *args_mem = malloc(out.rows * out.columns * sizeof(matmult_args_t));
     for(i64 row = 0;row < out.rows;row++) {
         for(i64 col = 0;col < out.columns;col++) {
             sem_wait_noerr(&threads_running_or_idle);
             pthread_t thr;
-            matmult_args_t *args = malloc(sizeof(matmult_args_t));
+            matmult_args_t *args = args_mem + (row * out.columns + col);
             args->out_row = row;
             args->out_col = col;
             if(pthread_create(&thr, &detached, matmult_thread, args)) {
@@ -195,6 +195,7 @@ int main() {
     for(i64 x = 0;x < out.rows * out.columns;x++) {
         sem_wait_noerr(&threads_finished);
     }
+    free(args_mem);
     printf("%"PRIi64" %"PRIi64"\n", out.rows, out.columns);
     for(i64 row = 0;row < out.rows;row++) {
         for(i64 col = 0;col < out.columns;col++) {
