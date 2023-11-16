@@ -11,8 +11,6 @@
 #define i64 int64_t
 
 sem_t threads_finished;
-sem_t threads_running;
-sem_t threads_running_or_idle;
 sem_t report_overflow_and_exit;
 
 void sem_init_noerr(sem_t *sem, int value) {
@@ -35,9 +33,6 @@ void sem_post_noerr(sem_t *sem) {
         exit(EXIT_FAILURE);
     }
 }
-
-const int RUNNING_THREADS_ALLOWED = 16;
-const int RUNNING_OR_IDLE_THREADS_ALLOWED = RUNNING_THREADS_ALLOWED * 2;
 
 #define ASSERT_LONGLONG_IS_I64 static_assert(sizeof(long long) == sizeof(i64), "long long must equal i64")
 #ifndef NO_BUILDIN_OVERFLOW_CHECKS
@@ -132,7 +127,6 @@ typedef struct matmult_thread_args {
 } matmult_args_t;
 
 void * matmult_thread(void *args_void) {
-    sem_wait_noerr(&threads_running);
     matmult_args_t *args = args_void;
     MATELEM(out, args->out_row, args->out_col) = args->out_row * out.columns + args->out_col;
     i64 i = args->out_row;
@@ -147,8 +141,6 @@ void * matmult_thread(void *args_void) {
         }
     }
     MATELEM(out, i, j) = sum;
-    sem_post_noerr(&threads_running);
-    sem_post_noerr(&threads_running_or_idle);
     sem_post_noerr(&threads_finished);
     return NULL;
 }
@@ -156,8 +148,6 @@ void * matmult_thread(void *args_void) {
 int main() {
     atexit(free_mats_atexit);
     sem_init_noerr(&threads_finished, 0);
-    sem_init_noerr(&threads_running, RUNNING_THREADS_ALLOWED);
-    sem_init_noerr(&threads_running_or_idle, RUNNING_OR_IDLE_THREADS_ALLOWED);
     sem_init_noerr(&report_overflow_and_exit, 1);
     read_matrix(&a);
     read_matrix(&b);
@@ -180,7 +170,6 @@ int main() {
     matmult_args_t *args_mem = malloc(out.rows * out.columns * sizeof(matmult_args_t));
     for(i64 row = 0;row < out.rows;row++) {
         for(i64 col = 0;col < out.columns;col++) {
-            sem_wait_noerr(&threads_running_or_idle);
             pthread_t thr;
             matmult_args_t *args = args_mem + (row * out.columns + col);
             args->out_row = row;
