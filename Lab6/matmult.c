@@ -40,6 +40,13 @@ void sem_post_noerr(sem_t *sem) {
     }
 }
 
+void sem_destroy_noerr(sem_t *sem) {
+    if(sem_destroy(sem) < 0) {
+        perror("sem_destroy");
+        exit(EXIT_FAILURE);
+    }
+}
+
 #define ASSERT_LONGLONG_IS_I64 static_assert(sizeof(long long) == sizeof(i64), "long long must equal i64")
 #ifndef NO_BUILDIN_OVERFLOW_CHECKS
     #define NO_BUILTIN_OVERFLOW_CHECKS 0
@@ -216,5 +223,7 @@ int main(int argc, char **argv) {
     free(a.data);
     free(b.data);
     free(out.data);
+    sem_destroy_noerr(&threads_finished);
+    sem_destroy_noerr(&report_overflow_and_exit);
     return EXIT_SUCCESS;
 }
