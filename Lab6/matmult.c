@@ -45,6 +45,7 @@ bool multiply(i64 x, i64 y, i64 *out) {
         return false;
     #endif
 }
+
 bool add(i64 x, i64 y, i64 *out) {
     #if (__GNUC__ || __clang__) && !NO_BUILTIN_OVERFLOW_CHECKS
         ASSERT_LONGLONG_IS_I64;
@@ -59,6 +60,7 @@ bool add(i64 x, i64 y, i64 *out) {
         return false;
     #endif
 }
+
 typedef struct matrix {
     i64 *data;
     i64 rows;
@@ -100,19 +102,24 @@ void read_matrix(matrix_t *m) {
 typedef struct matmult_thread_args {
     i64 out_row;
     i64 out_col;
+
     i64 peak_threads;
+
     pthread_t handle;
 } matmult_args_t;
 
 void * matmult_thread(void *args_void) {
     matmult_args_t *args = args_void;
+
     if(counting_threads) {
         i64 old = atomic_fetch_add(&thread_counter, 1);
         args->peak_threads = (old + 1);
     }
+
     i64 i = args->out_row;
     i64 j = args->out_col;
     i64 sum = 0;
+
     for(i64 k = 0;k < a.columns;k++) {
         i64 result;
         if(multiply(MATELEM(a, i, k), MATELEM(b, k, j), &result) || add(sum, result, &sum)) {
@@ -120,10 +127,13 @@ void * matmult_thread(void *args_void) {
             exit(EXIT_FAILURE);
         }
     }
+
     MATELEM(out, i, j) = sum;
+
     if(counting_threads) {
         atomic_fetch_sub(&thread_counter, 1);
     }
+
     return NULL;
 }
 
@@ -143,14 +153,17 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Incompatible matrix sizes %"PRIi64"x%"PRIi64" %"PRIi64"x%"PRIi64"\n", a.rows, a.columns, b.rows, b.columns);
         return EXIT_FAILURE;
     }
+
     out.rows = a.rows;
     out.columns = b.columns;
     alloc_mat(&out);
+
     matmult_args_t *args_mem = calloc(out.rows * out.columns, sizeof(matmult_args_t));
     if(args_mem == NULL) {
         fprintf(stderr, "Could not allocate memory for thread arguments\n");
         return EXIT_FAILURE;
     }
+
     for(i64 row = 0;row < out.rows;row++) {
         for(i64 col = 0;col < out.columns;col++) {
             matmult_args_t *args = args_mem + (row * out.columns + col);
@@ -159,9 +172,11 @@ int main(int argc, char **argv) {
             PT_CALL(pthread_create(&args->handle, NULL, matmult_thread, args));
         }
     }
+
     for(i64 x = 0;x < out.rows * out.columns;x++) {
         PT_CALL(pthread_join(args_mem[x].handle, NULL));
     }
+
     if(counting_threads) {
         i64 peak_threads = 0;
         for(i64 i = 0;i < out.rows * out.columns;i++) {
@@ -170,7 +185,9 @@ int main(int argc, char **argv) {
         }
         fprintf(stderr, "Peak number of threads: %"PRIi64"\n", peak_threads);
     }
+
     free(args_mem);
+
     printf("%"PRIi64" %"PRIi64"\n", out.rows, out.columns);
     for(i64 row = 0;row < out.rows;row++) {
         for(i64 col = 0;col < out.columns;col++) {
@@ -178,8 +195,10 @@ int main(int argc, char **argv) {
         }
         printf("\n");
     }
+
     free(a.data);
     free(b.data);
     free(out.data);
+
     return EXIT_SUCCESS;
 }
