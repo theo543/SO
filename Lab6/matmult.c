@@ -18,9 +18,6 @@ const char* COUNT_FLAG = "--peak-threads";
 bool counting_threads = false;
 i64 _Atomic thread_counter = 0;
 
-sem_t threads_finished;
-sem_t report_overflow_and_exit;
-
 #define ASSERT_LONGLONG_IS_I64 static_assert(sizeof(long long) == sizeof(i64), "long long must equal i64")
 #ifndef NO_BUILTIN_OVERFLOW_CHECKS
     #define NO_BUILTIN_OVERFLOW_CHECKS 0
@@ -104,6 +101,7 @@ typedef struct matmult_thread_args {
     i64 out_row;
     i64 out_col;
     i64 peak_threads;
+    pthread_t handle;
 } matmult_args_t;
 
 void * matmult_thread(void *args_void) {
@@ -118,13 +116,11 @@ void * matmult_thread(void *args_void) {
     for(i64 k = 0;k < a.columns;k++) {
         i64 result;
         if(multiply(MATELEM(a, i, k), MATELEM(b, k, j), &result) || add(sum, result, &sum)) {
-            SEM_CALL(sem_wait(&report_overflow_and_exit));
             fprintf(stderr, "Overflow calculating result at position %"PRIi64"x%"PRIi64"\n", i, j);
             exit(EXIT_FAILURE);
         }
     }
     MATELEM(out, i, j) = sum;
-    SEM_CALL(sem_post(&threads_finished));
     if(counting_threads) {
         atomic_fetch_sub(&thread_counter, 1);
     }
@@ -141,8 +137,6 @@ int main(int argc, char **argv) {
         }
     }
 
-    PT_CALL(sem_init(&threads_finished, 0, 0));
-    PT_CALL(sem_init(&report_overflow_and_exit, 0, 1));
     read_matrix(&a);
     read_matrix(&b);
     if(a.columns != b.rows) {
@@ -152,9 +146,6 @@ int main(int argc, char **argv) {
     out.rows = a.rows;
     out.columns = b.columns;
     alloc_mat(&out);
-    pthread_attr_t detached;
-    PT_CALL(pthread_attr_init(&detached));
-    PT_CALL(pthread_attr_setdetachstate(&detached, PTHREAD_CREATE_DETACHED));
     matmult_args_t *args_mem = calloc(out.rows * out.columns, sizeof(matmult_args_t));
     if(args_mem == NULL) {
         fprintf(stderr, "Could not allocate memory for thread arguments\n");
@@ -162,16 +153,14 @@ int main(int argc, char **argv) {
     }
     for(i64 row = 0;row < out.rows;row++) {
         for(i64 col = 0;col < out.columns;col++) {
-            pthread_t thr;
             matmult_args_t *args = args_mem + (row * out.columns + col);
             args->out_row = row;
             args->out_col = col;
-            PT_CALL(pthread_create(&thr, &detached, matmult_thread, args));
+            PT_CALL(pthread_create(&args->handle, NULL, matmult_thread, args));
         }
     }
-    PT_CALL(pthread_attr_destroy(&detached));
     for(i64 x = 0;x < out.rows * out.columns;x++) {
-        SEM_CALL(sem_wait(&threads_finished));
+        PT_CALL(pthread_join(args_mem[x].handle, NULL));
     }
     if(counting_threads) {
         i64 peak_threads = 0;
@@ -192,7 +181,5 @@ int main(int argc, char **argv) {
     free(a.data);
     free(b.data);
     free(out.data);
-    PT_CALL(sem_destroy(&threads_finished));
-    PT_CALL(sem_destroy(&report_overflow_and_exit));
     return EXIT_SUCCESS;
 }
