@@ -5,6 +5,9 @@ include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -pedantic -fsanitize=address,undefined")
 
+string(LENGTH "${CMAKE_SOURCE_DIR}/" SOURCE_PATH_SIZE)
+add_compile_definitions(SOURCE_PATH_SIZE=${SOURCE_PATH_SIZE})
+
 add_executable(Lab1_main Lab1/main.c)
 
 add_executable(Lab2_hello Lab2/hello.c)
