@@ -15,9 +15,8 @@ void ctrl_c_set_flag(int signum) {
     threads_keep_running = false;
 }
 
-const int THREADS = 2;
-const int MAX_RESOURCES = 5;
-int available_resources = MAX_RESOURCES;
+int max_resources;
+int available_resources;
 
 pthread_mutex_t resource_mutex;
 
@@ -53,7 +52,7 @@ int increase_count(int count) {
 void *resource_thread(void *rng_void) {
     unsigned int *rng_state = rng_void;
     while(threads_keep_running) {
-        int amount = (rand_r(rng_state) % MAX_RESOURCES) + 1;
+        int amount = (rand_r(rng_state) % max_resources) + 1;
         int remain = decrease_count(amount);
         if(remain < 0) {
             printf("Couldn't get %d resources %d remaining\n", amount, -(remain + 1));
@@ -67,18 +66,29 @@ void *resource_thread(void *rng_void) {
     return NULL;
 }
 
-int main() {
+int main(int argc, char **argv) {
+    if(argc != 3) {
+        fprintf(stderr, "Usage: count <THREADS> <MAX_RESOURCES>\n");
+        return EXIT_FAILURE;
+    }
+    int threads = atoi(argv[1]);
+    available_resources = max_resources = atoi(argv[2]);
+    if(threads == 0 || max_resources == 0) {
+        fprintf(stderr, "THREADS and MAX_RESOURCES must be positive integers.\n");
+        return EXIT_FAILURE;
+    }
+
     signal(SIGINT, ctrl_c_set_flag);
     PT_CALL(pthread_mutex_init(&resource_mutex, NULL));
 
-    unsigned int *thread_rng_states = malloc(THREADS * sizeof(unsigned int));
-    pthread_t *thread_handles = malloc(THREADS * sizeof(pthread_t));
-    for(int x = 0;x < THREADS;x++) {
+    unsigned int *thread_rng_states = malloc(threads * sizeof(unsigned int));
+    pthread_t *thread_handles = malloc(threads * sizeof(pthread_t));
+    for(int x = 0;x < threads;x++) {
         thread_rng_states[x] = rand();
         PT_CALL(pthread_create(&thread_handles[x], NULL, resource_thread, &thread_rng_states[x]));
     }
 
-    for(int x = 0;x < THREADS;x++) {
+    for(int x = 0;x < threads;x++) {
         PT_CALL(pthread_join(thread_handles[x], NULL));
     }
 
