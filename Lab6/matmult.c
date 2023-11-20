@@ -19,12 +19,18 @@ bool counting_threads = false;
 i64 _Atomic thread_counter = 0;
 
 #define ASSERT_LONGLONG_IS_I64 static_assert(sizeof(long long) == sizeof(i64), "long long must equal i64")
+#ifndef NO_OVERFLOW_CHECKS
+    #define NO_OVERFLOW_CHECKS 0
+#endif
 #ifndef NO_BUILTIN_OVERFLOW_CHECKS
     #define NO_BUILTIN_OVERFLOW_CHECKS 0
 #endif
 
 bool multiply(i64 x, i64 y, i64 *out) {
-    #if (__GNUC__ || __clang__) && !NO_BUILTIN_OVERFLOW_CHECKS
+    #if NO_OVERFLOW_CHECKS
+        *out = x * y;
+        return false;
+    #elif (__GNUC__ || __clang__) && !NO_BUILTIN_OVERFLOW_CHECKS
         ASSERT_LONGLONG_IS_I64;
         return __builtin_smulll_overflow(x, y, (long long*)out);
     #else
@@ -47,7 +53,10 @@ bool multiply(i64 x, i64 y, i64 *out) {
 }
 
 bool add(i64 x, i64 y, i64 *out) {
-    #if (__GNUC__ || __clang__) && !NO_BUILTIN_OVERFLOW_CHECKS
+    #if NO_OVERFLOW_CHECKS
+        *out = x + y;
+        return false;
+    #elif (__GNUC__ || __clang__) && !NO_BUILTIN_OVERFLOW_CHECKS
         ASSERT_LONGLONG_IS_I64;
         return __builtin_saddll_overflow(x, y, (long long*)out);
     #else
