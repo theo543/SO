@@ -60,19 +60,21 @@ void barrier_point(barrier_t *barrier) {
     }
 }
 
-void * barrier_thread(void *unused) {
-    (void)unused;
+void * barrier_thread(void *num_repeats_void) {
     static_assert(sizeof(long long) >= sizeof(pid_t), "pid_t must fit in a long long so that it can be printf-ed");
+    int num_repeats = *(int*)num_repeats_void;
     long long tid = gettid();
-    printf ("%lld reached the barrier\n", tid);
-    barrier_point(&barrier);
-    printf ("%lld passed the barrier\n", tid);
+    for(int i = 0;i < num_repeats;i++) {
+        printf ("%lld reached the barrier\n", tid);
+        barrier_point(&barrier);
+        printf ("%lld passed the barrier\n", tid);
+    }
     return NULL;
 }
 
 int main (int argc, char **argv) {
-    if(argc != 2) {
-        fprintf(stderr, "Usage: barrier <THREADS>\n");
+    if(argc != 2 && argc != 3) {
+        fprintf(stderr, "Usage: barrier <THREADS> [<REPEATS>]\n");
         return EXIT_FAILURE;
     }
     int threads = atoi(argv[1]);
@@ -80,12 +82,20 @@ int main (int argc, char **argv) {
         fprintf(stderr, "Invalid number of threads.\n");
         return EXIT_FAILURE;
     }
+    int num_repeats = 1;
+    if(argc == 3) {
+        num_repeats = atoi(argv[2]);
+        if(num_repeats == 0) {
+            fprintf(stderr, "Invalid number of repeats.\n");
+            return EXIT_FAILURE;
+        }
+    }
 
     barrier_init(&barrier, threads);
 
     pthread_t *handles = malloc(threads * sizeof(pthread_t));
     for(int x = 0;x < threads;x++) {
-        PT_CALL(pthread_create(&handles[x], NULL, barrier_thread, NULL));
+        PT_CALL(pthread_create(&handles[x], NULL, barrier_thread, &num_repeats));
     }
     for(int x = 0;x < threads;x++) {
         PT_CALL(pthread_join(handles[x], NULL));
