@@ -67,6 +67,8 @@ void *resource_thread(void *rng_void) {
 }
 
 int main(int argc, char **argv) {
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     if(argc != 3) {
         fprintf(stderr, "Usage: count <THREADS> <MAX_RESOURCES>\n");
         return EXIT_FAILURE;
