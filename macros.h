@@ -3,7 +3,7 @@
 #define PERROR_WITH_DETAILS(CALL)\
 do {\
     /* SOURCE_PATH_SIZE defined in CMake */\
-    fprintf(stderr, "Error at file %s:%d => ", __FILE__ + SOURCE_PATH_SIZE, __LINE__);\
+    fprintf(stderr, "Error at file %s:%d => ", &__FILE__[SOURCE_PATH_SIZE], __LINE__);\
     perror(#CALL);\
 } while (0)
 
