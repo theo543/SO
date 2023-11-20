@@ -12,6 +12,10 @@ bool _Atomic threads_keep_running = true;
 
 void ctrl_c_set_flag(int signum) {
     (void)signum;
+    if(threads_keep_running == false) {
+        fprintf(stderr, "SIGINT received twice. Force quitting.\n");
+        exit(EXIT_FAILURE);
+    }
     threads_keep_running = false;
 }
 
