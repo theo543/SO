@@ -3,7 +3,11 @@ project(SO LANGUAGES C)
 
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -pedantic -fsanitize=address,undefined")
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -pedantic")
+else()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -pedantic -fsanitize=address,undefined")
+endif()
 
 string(LENGTH "${CMAKE_SOURCE_DIR}/" SOURCE_PATH_SIZE)
 add_compile_definitions(SOURCE_PATH_SIZE=${SOURCE_PATH_SIZE})
