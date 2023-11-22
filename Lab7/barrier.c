@@ -73,6 +73,8 @@ void * barrier_thread(void *num_repeats_void) {
 }
 
 int main (int argc, char **argv) {
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     if(argc != 2 && argc != 3) {
         fprintf(stderr, "Usage: barrier <THREADS> [<REPEATS>]\n");
         return EXIT_FAILURE;
