@@ -1,10 +1,10 @@
 #include <stdlib.h>
 
-#define PERROR_WITH_DETAILS(CALL)\
+#define PERROR_WITH_DETAILS(MSG)\
 do {\
     /* SOURCE_PATH_SIZE defined in CMake */\
     fprintf(stderr, "Error at file %s:%d => ", &__FILE__[SOURCE_PATH_SIZE], __LINE__);\
-    perror(#CALL);\
+    perror(MSG);\
 } while (0)
 
 // Call pthread function, report any errors.
@@ -13,7 +13,7 @@ do {\
     int result = CALL;\
     if(result != 0) {\
         errno = result;\
-        PERROR_WITH_DETAILS(CALL);\
+        PERROR_WITH_DETAILS(#CALL);\
         exit(errno);\
     }\
 } while (0)
@@ -23,7 +23,7 @@ do {\
 do {\
     int result = CALL;\
     if(result != 0) {\
-        PERROR_WITH_DETAILS(CALL);\
+        PERROR_WITH_DETAILS(#CALL);\
         exit(errno);\
     }\
 } while (0)
