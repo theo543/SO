@@ -1,0 +1,2 @@
+331 STD { int sys_khello(const char *msg); }
+332 STD { int sys_kcopybuf (const char *src, char *dst, size_t len); }

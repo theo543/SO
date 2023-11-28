@@ -1,0 +1,15 @@
+Len:14
+Source: Hello World!
+Copied: Hello World!
+retval: 0
+
+Len:14
+Source: NULL
+Copied: Placeholder.
+retval: 14
+
+Len:14
+Source: Hello World!
+Copied: NULL
+retval: 14
+
