@@ -142,7 +142,11 @@ int main_mainprocess(int argc, char **argv, char **envp) {
         }
         shm_iter++;
         if(*shm_iter != ERROR_NONE) {
-            printf(" <%s>", ERROR_MSG[*shm_iter]);
+            if(*shm_iter > ERROR_NO_RESPONSE) {
+                printf(" <Received invalid error code.>");
+            } else {
+                printf(" <%s>", ERROR_MSG[*shm_iter]);
+            }
         }
         printf("\n");
     }
