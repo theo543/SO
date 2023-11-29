@@ -16,11 +16,9 @@
 #include <sys/mman.h>
 
 const char *SHM_NAME = "/SHMCOLLATZ_SHARED_MEMORY_SEGMENT";
-const char *SUBPROCESS_FLAG = "-shm";
 const int NUMBERS_FOR_COLLATZ = 3000; // up to 3000 numbers in the sequence
 const int NUMBERS_FOR_METADATA = 2; // the collatz numbers are terminated by a 0, then an error code follows
-const int NUMBERS_FOR_INPUT = 10; // always at the end of the memory, 40 chars, more than enough for inputs that fit in 64 bits
-const int TOTAL_NUMBERS_PER_PROCESS = NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA + NUMBERS_FOR_INPUT;
+const int TOTAL_NUMBERS_PER_PROCESS = NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA;
 const int MEMORY_PER_PROCESS = TOTAL_NUMBERS_PER_PROCESS * sizeof(uint64_t);
 
 // used by subprocess to report errors
@@ -56,7 +54,9 @@ int round_up_mem(int mem_size, int page_size) {
     return mem_size + page_size - rem;
 }
 
-int main_mainprocess(int argc, char **argv, char **envp) {
+int main_subprocess(uint64_t *shm_ptr, char *input);
+
+int main_mainprocess(int argc, char **argv) {
     printf("Starting Parent %d\n", getpid());
 
     int procs = argc - 1;
@@ -79,47 +79,19 @@ int main_mainprocess(int argc, char **argv, char **envp) {
         return errno;
     }
 
-    int self_location_fd = open("/proc/self/exe", O_RDONLY);
-    if(self_location_fd == -1) {
-        perror("open(\"/proc/self/exe\")");
-        munmap(shm_ptr, shm_size);
-        shm_unlink(SHM_NAME);
-    }
-
     for(int x = 1;x<argc;x++) {
-        char process_index[50];
-        sprintf(process_index, "%d", x - 1);
 
         int subprocess_offset = TOTAL_NUMBERS_PER_PROCESS * (x - 1);
         uint64_t *subproc_shm = shm_ptr + subprocess_offset;
         *subproc_shm = 0;
         *(subproc_shm + 1) = ERROR_NO_RESPONSE;
 
-        // since atoi skips any amount of whitespace, don't send any of it to the child
-        char* input_copy_start = argv[x];
-        while(isspace(*input_copy_start)) {
-            input_copy_start++;
-        }
-
-        char *subproc_shm_input = (char*)(subproc_shm + NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA);
-        *subproc_shm_input = '\0';
-        strncat(subproc_shm_input, input_copy_start, sizeof(uint64_t) * NUMBERS_FOR_INPUT - 1);
-
-        // args to pass to subprocess (null-terminated)
-        // fexecve is missing a const qualifier because of backward compatibility
-        // cast away SUBPROCESS_FLAG const
-        char * new_argv[] = {argv[0], (char*)SUBPROCESS_FLAG, process_index, NULL};
-
         pid_t pid = fork();
         if(pid == -1) {
             perror("fork");
         } else if(pid == 0) {
             // child
-            fexecve(self_location_fd, new_argv, envp);
-
-            // fexecve should not return
-            perror("fexecve");
-            return EXIT_FAILURE;
+            exit(main_subprocess(subproc_shm, argv[x]));
         } else {
             // parent
             // don't do anything yet
@@ -153,34 +125,13 @@ int main_mainprocess(int argc, char **argv, char **envp) {
 
     munmap(shm_ptr, shm_size);
     shm_unlink(SHM_NAME);
-    close(self_location_fd);
     return EXIT_SUCCESS;
 }
 
-int main_subprocess(char **argv) {
+int main_subprocess(uint64_t *shm_ptr, char *input) {
     int retcode = 0;
-    int shm_fd = shm_open(SHM_NAME, O_RDWR, S_IRUSR|S_IWUSR);
-    uint64_t *shm_ptr = MAP_FAILED;
-    if(shm_fd < 0) {
-        perror("shm_open (subprocess)");
-        retcode = errno;
-        goto exit;
-    }
 
-    int subprocess_index = atoi(argv[2]);
-    int prev_proc_numbers = TOTAL_NUMBERS_PER_PROCESS * subprocess_index;
-    // not really the full size, but we don't need that
-    int shm_size = round_up_mem((prev_proc_numbers + TOTAL_NUMBERS_PER_PROCESS) * sizeof(uint64_t), getpagesize());
-
-    shm_ptr = mmap(0, shm_size, PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if(shm_ptr == MAP_FAILED) {
-        perror("mmap (subprocess)");
-        retcode = errno;
-        goto exit;
-    }
-    shm_ptr += prev_proc_numbers;
-    char *shm_input = (char*)(shm_ptr + NUMBERS_FOR_COLLATZ + NUMBERS_FOR_METADATA);
-    uint64_t collatz = checked_strtoull(shm_input);
+    uint64_t collatz = checked_strtoull(input);
     if(collatz == 0) {
         *shm_ptr = 0;
         *(shm_ptr + 1) = ERROR_PARSE_FAILED;
@@ -223,22 +174,14 @@ int main_subprocess(char **argv) {
 
     exit:
     printf("%s Parent %d Me %d\n", retcode == 0 ? "Done" : "Error", getppid(), getpid());
-    if(shm_fd != -1) {
-        close(shm_fd);
-        if(shm_ptr != MAP_FAILED) {
-            munmap(shm_ptr, shm_size);
-        }
-    }
     return retcode;
 }
 
-int main(int argc, char **argv, char **envp) {
+int main(int argc, char **argv) {
     if(argc <= 1) {
-        printf("Usage: shmcollatz <nr_1 nr_2 ... nr_n> | <%s (implementation detail) SUBPROCESS_INDEX\n", SUBPROCESS_FLAG);
+        printf("Usage: shmcollatz <nr_1 nr_2 ... nr_n>\n");
         return EXIT_FAILURE;
-    } else if(argc == 3 && (strcmp(argv[1], SUBPROCESS_FLAG) == 0)) {
-        exit(main_subprocess(argv));
     } else {
-        exit(main_mainprocess(argc, argv, envp));
+        exit(main_mainprocess(argc, argv));
     }
 }
