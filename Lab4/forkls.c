@@ -6,7 +6,10 @@
 
 const char *LS_LOCATION = "/usr/bin/ls";
 
-int main(void) {
+int main(int argc, char **argv, char **envp) {
+    (void)argc;
+    (void)argv;
+
     pid_t pid = fork();
     if(pid < 0) {
         perror("fork");
@@ -14,7 +17,7 @@ int main(void) {
     } else if(pid == 0) {
         // child
         char *argv[] = {"ls", NULL};
-        execve(LS_LOCATION, argv, NULL);
+        execve(LS_LOCATION, argv, envp);
         perror("execve");
         return EXIT_FAILURE;
     } else {
